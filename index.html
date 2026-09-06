@@ -66,6 +66,33 @@
   .display{font-family:"Anton","Noto Sans TC",sans-serif; letter-spacing:0.5px;}
   .mono{font-family:"JetBrains Mono",monospace; font-variant-numeric:tabular-nums;}
 
+  /* ---- Passcode gate ---- */
+  .gate{
+    position:fixed; inset:0; z-index:5000;
+    background:linear-gradient(165deg, var(--court) 0%, var(--court-deep) 100%);
+    display:flex; align-items:center; justify-content:center; padding:24px;
+  }
+  .gate.hidden{display:none;}
+  .gate-card{
+    background:var(--paper-raised); border-radius:var(--r-lg); box-shadow:var(--shadow);
+    padding:32px 26px; max-width:320px; width:100%; text-align:center;
+  }
+  .gate-icon{font-size:2.2rem; margin-bottom:10px;}
+  .gate-title{font-family:"Anton","Noto Sans TC",sans-serif; font-size:1.3rem; color:var(--ink); margin-bottom:6px;}
+  .gate-sub{font-size:0.85rem; color:var(--ink-soft); margin-bottom:18px;}
+  .gate-card form{display:flex; flex-direction:column; gap:10px;}
+  .gate-card input{
+    width:100%; padding:12px 14px; border-radius:var(--r-sm); border:1px solid var(--line);
+    background:var(--paper); color:var(--ink); font-size:1.1rem; text-align:center;
+    letter-spacing:2px; font-family:"JetBrains Mono",monospace;
+  }
+  .gate-card button{
+    background:var(--marigold); color:var(--marigold-ink); border:none; font-weight:800;
+    padding:12px; border-radius:var(--r-md); font-size:0.95rem;
+  }
+  .gate-card button:active{transform:scale(0.98);}
+  .gate-error{color:var(--danger-ink); font-size:0.8rem; margin-top:12px;}
+
   /* ---- Header ---- */
   .hero{
     background:linear-gradient(165deg, var(--court) 0%, var(--court-deep) 100%);
@@ -303,6 +330,19 @@
 </head>
 <body>
 
+<div class="gate" id="gate">
+  <div class="gate-card">
+    <div class="gate-icon">🔒</div>
+    <h1 class="gate-title">全透天運動會</h1>
+    <p class="gate-sub">請輸入通關密碼</p>
+    <form id="gate-form">
+      <input type="text" inputmode="numeric" id="gate-input" placeholder="密碼" autocomplete="off">
+      <button type="submit">進入</button>
+    </form>
+    <p class="gate-error" id="gate-error" hidden>密碼不對喔，再試一次</p>
+  </div>
+</div>
+
 <header class="hero">
   <div class="hero-badge">第五屆・2026 EDITION</div>
   <h1>全透天運動會</h1>
@@ -480,7 +520,7 @@
   <!-- ============ 比分 ============ -->
   <section id="tab-score" class="tab-pane">
     <div class="section-head">⚡ 即時比分</div>
-    <p class="score-note">由裁判組其中一支手機操作加減分；每個項目分數高的一方獲勝（贏得項目數較多者奪冠，非加總分數）。</p>
+    <p class="score-note">大家打開這頁都會即時同步；每個項目分數高的一方獲勝（贏得項目數較多者奪冠，非加總分數）。</p>
 
     <div class="board">
       <div class="board-status" id="board-status">尚未更新</div>
@@ -578,7 +618,7 @@
   <!-- ============ 飲料 ============ -->
   <section id="tab-drinks" class="tab-pane">
     <div class="section-head">🥤 點飲料</div>
-    <p class="score-note">大家輪流用同一支手機點餐，填名字＋選飲料送出，下面清單會自動彙總。</p>
+    <p class="score-note">填名字＋選飲料送出，大家不管用哪支手機打開都會看到同一份彙總清單。</p>
 
     <div class="card" style="padding:18px;">
       <form class="order-form" id="order-form">
@@ -653,6 +693,24 @@
 
 <script>
 (function(){
+  // ---------- Passcode gate ----------
+  var GATE_CODE = '20261009';
+  var gateEl = document.getElementById('gate');
+  try{
+    if(localStorage.getItem('td_gate_ok') === '1'){ gateEl.classList.add('hidden'); }
+  }catch(e){}
+  document.getElementById('gate-form').addEventListener('submit', function(e){
+    e.preventDefault();
+    var val = document.getElementById('gate-input').value.trim();
+    if(val === GATE_CODE){
+      try{ localStorage.setItem('td_gate_ok', '1'); }catch(err){}
+      gateEl.classList.add('hidden');
+    } else {
+      document.getElementById('gate-error').hidden = false;
+      document.getElementById('gate-input').value = '';
+    }
+  });
+
   // ---------- Tabs ----------
   var tabs = document.querySelectorAll('.nav-tab');
   tabs.forEach(function(btn){
@@ -689,24 +747,32 @@
   }
   tickCountdown();
   setInterval(tickCountdown, 30000);
+})();
+</script>
 
-  // ---------- Local storage helpers (single-device: 裁判組/揪團主操作這支手機) ----------
-  function loadJSON(key, fallback){
-    try{ var v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; }catch(e){ return fallback; }
-  }
-  function saveJSON(key, val){
-    try{ localStorage.setItem(key, JSON.stringify(val)); }catch(e){}
-  }
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js";
+  import { getDatabase, ref, onValue, set, push, remove } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-database.js";
 
-  // ---- Score (per-event: 大隊接力／排球／匹克球／保齡球 + 總分) ----
+  var firebaseConfig = {
+    apiKey: "AIzaSyA-2J8StB0GYKWTNxAfBCV61Zuctk34GrI",
+    authDomain: "touting-45bab.firebaseapp.com",
+    projectId: "touting-45bab",
+    storageBucket: "touting-45bab.firebasestorage.app",
+    messagingSenderId: "250990658889",
+    appId: "1:250990658889:web:b9b913c6cb0cdf57770698"
+  };
+  var app = initializeApp(firebaseConfig);
+  var db = getDatabase(app);
+
+  // ---- Score (per-event: 大隊接力／排球／匹克球／保齡球 + 總戰績，跨裝置即時同步) ----
   var EVENTS = ['relay','volleyball','pickleball','bowling'];
-  var scoreState = loadJSON('td_score_v2', {
+  var scoreState = {
     relay:{tea:0,vamp:0}, volleyball:{tea:0,vamp:0},
     pickleball:{tea:0,vamp:0}, bowling:{tea:0,vamp:0},
     updatedAt: null
-  });
-  // migrate anything missing (future-proof if an event gets added later)
-  EVENTS.forEach(function(ev){ if(!scoreState[ev]) scoreState[ev] = {tea:0, vamp:0}; });
+  };
+  var scoreRef = ref(db, 'score');
 
   // 每個項目分數高的一方贏得該項目；總戰績 = 贏得項目數較多的一方獲勝（非加總分數）
   function eventWinner(ev){
@@ -728,10 +794,8 @@
       if(winner === 'tea') winsTea++;
       if(winner === 'vamp') winsVamp++;
     });
-    var totalTea = winsTea;
-    var totalVamp = winsVamp;
-    document.getElementById('total-tea').textContent = totalTea;
-    document.getElementById('total-vamp').textContent = totalVamp;
+    document.getElementById('total-tea').textContent = winsTea;
+    document.getElementById('total-vamp').textContent = winsVamp;
 
     var teaEl = document.getElementById('total-team-tea');
     var vampEl = document.getElementById('total-team-vamp');
@@ -739,22 +803,34 @@
     var crownVamp = document.getElementById('crown-vamp');
     teaEl.classList.remove('leading'); vampEl.classList.remove('leading');
     crownTea.hidden = true; crownVamp.hidden = true;
-    if(totalTea !== totalVamp){
-      if(totalTea > totalVamp){ teaEl.classList.add('leading'); crownTea.hidden = false; }
+    if(winsTea !== winsVamp){
+      if(winsTea > winsVamp){ teaEl.classList.add('leading'); crownTea.hidden = false; }
       else { vampEl.classList.add('leading'); crownVamp.hidden = false; }
     }
 
     var stamp = document.getElementById('score-updated');
     stamp.textContent = scoreState.updatedAt ? ('更新於 ' + new Date(scoreState.updatedAt).toLocaleTimeString('zh-TW', {hour:'2-digit', minute:'2-digit'})) : '尚無更新';
-    document.getElementById('board-status').textContent = '本機記錄中';
+    document.getElementById('board-status').textContent = '即時同步中';
   }
+
+  onValue(scoreRef, function(snapshot){
+    var data = snapshot.val();
+    scoreState = {
+      relay: (data && data.relay) || {tea:0,vamp:0},
+      volleyball: (data && data.volleyball) || {tea:0,vamp:0},
+      pickleball: (data && data.pickleball) || {tea:0,vamp:0},
+      bowling: (data && data.bowling) || {tea:0,vamp:0},
+      updatedAt: data ? data.updatedAt : null
+    };
+    renderScore();
+  }, function(){
+    document.getElementById('board-status').textContent = '連線失敗，請檢查網路';
+  });
 
   function bumpScore(event, team, delta){
     var next = Math.max(0, (scoreState[event][team]||0) + delta);
-    scoreState[event][team] = next;
-    scoreState.updatedAt = Date.now();
-    saveJSON('td_score_v2', scoreState);
-    renderScore();
+    set(ref(db, 'score/' + event + '/' + team), next);
+    set(ref(db, 'score/updatedAt'), Date.now());
   }
 
   document.querySelectorAll('.score-btn').forEach(function(btn){
@@ -781,22 +857,18 @@
     resetArmed = false;
     resetBtn.textContent = '重置全部比分';
     resetBtn.classList.remove('confirming');
-    scoreState = {
+    set(scoreRef, {
       relay:{tea:0,vamp:0}, volleyball:{tea:0,vamp:0},
       pickleball:{tea:0,vamp:0}, bowling:{tea:0,vamp:0},
       updatedAt: Date.now()
-    };
-    saveJSON('td_score_v2', scoreState);
-    renderScore();
+    });
   });
 
-  renderScore();
-
-  // ---- Drinks ----
-  var orders = loadJSON('td_drinks', []);
+  // ---- Drinks（跨裝置即時同步）----
   var savedName = '';
   try{ savedName = localStorage.getItem('td_drink_name') || ''; }catch(e){}
   document.getElementById('f-name').value = savedName;
+  var drinksRef = ref(db, 'drinks');
 
   function escapeHtml(s){
     return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
@@ -804,15 +876,20 @@
     });
   }
 
-  function renderOrders(){
+  function renderOrders(ordersObj){
+    var entries = Object.keys(ordersObj || {}).map(function(key){
+      var d = ordersObj[key]; d._key = key; return d;
+    });
+    entries.sort(function(a,b){ return (a.createdAt||0) - (b.createdAt||0); });
+
     var list = document.getElementById('order-list');
-    document.getElementById('order-count').textContent = orders.length;
-    if(orders.length === 0){
+    document.getElementById('order-count').textContent = entries.length;
+    if(entries.length === 0){
       list.innerHTML = '<div class="empty-note">還沒有人點飲料，當第一個吧！</div>';
       return;
     }
     list.innerHTML = '';
-    orders.forEach(function(d){
+    entries.forEach(function(d){
       var row = document.createElement('div');
       row.className = 'order-row';
       var drinkLabel = d.drink === '__other__' ? (d.note || '其他') : d.drink;
@@ -824,22 +901,23 @@
       delBtn.className = 'order-del';
       delBtn.textContent = '刪除';
       delBtn.addEventListener('click', function(){
-        orders = orders.filter(function(o){ return o.id !== d.id; });
-        saveJSON('td_drinks', orders);
-        renderOrders();
+        remove(ref(db, 'drinks/' + d._key));
       });
       row.appendChild(delBtn);
       list.appendChild(row);
     });
   }
 
+  onValue(drinksRef, function(snapshot){
+    renderOrders(snapshot.val());
+  });
+
   document.getElementById('order-form').addEventListener('submit', function(e){
     e.preventDefault();
     var name = document.getElementById('f-name').value.trim();
     if(!name) return;
     try{ localStorage.setItem('td_drink_name', name); savedName = name; }catch(err){}
-    orders.push({
-      id: Date.now() + '-' + Math.random().toString(36).slice(2, 7),
+    push(drinksRef, {
       name: name,
       drink: document.getElementById('f-drink').value,
       sugar: document.getElementById('f-sugar').value,
@@ -847,9 +925,7 @@
       note: document.getElementById('f-note').value.trim(),
       createdAt: Date.now()
     });
-    saveJSON('td_drinks', orders);
     document.getElementById('f-note').value = '';
-    renderOrders();
   });
 
   var clearBtn = document.getElementById('drinks-clear');
@@ -870,13 +946,8 @@
     clearArmed = false;
     clearBtn.textContent = '清空全部訂單';
     clearBtn.classList.remove('confirming');
-    orders = [];
-    saveJSON('td_drinks', orders);
-    renderOrders();
+    set(drinksRef, null);
   });
-
-  renderOrders();
-})();
 </script>
 </body>
 </html>
